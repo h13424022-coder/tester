@@ -23,7 +23,7 @@ const App: React.FC = () => {
     const [result, setResult] = useState<AnalysisResult | null>(null);
     // process.env.API_KEY가 실제 유효한 값인지 확인
 
-    const [hasKey, setHasKey] = useState<boolean>(import.meta.env.VITE_GEMINI_API_KEY);
+    const [hasKey, setHasKey] = useState<boolean>(import.meta.env.VITE_API_KEY);
     //    !!process.env.API_KEY && process.env.API_KEY !== "undefined" && process.env.API_KEY !== ""
     //);
     const resultRef = useRef<HTMLDivElement>(null);
