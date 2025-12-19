@@ -5,65 +5,69 @@ export interface AnalysisResult {
   text: string;
   sources: { title: string; uri: string }[];
 }
+
 /**
  * 복용 중인 영양제 및 의약품 목록을 분석하여 상호작용 위험을 반환합니다.
  */
 export const analyzeSupplements = async (supplementList: string[]): Promise<AnalysisResult> => {
-    // API key must be obtained from process.env.API_KEY.
+    // 반드시 process.env.API_KEY로부터 키를 가져옵니다.
     const apiKey = process.env.API_KEY;
     
-    if (!apiKey || apiKey === "undefined") {
+    if (!apiKey || apiKey === "undefined" || apiKey === "") {
       throw new Error("API_KEY_MISSING");
     }
 
-    // Always create a new GoogleGenAI instance right before the call for up-to-date key selection.
+    // 호출 직전에 인스턴스를 생성하여 최신 API 키 상태를 반영합니다.
     const ai = new GoogleGenAI({ apiKey });
-    // Use gemini-3-pro-preview for complex medical/pharmacological reasoning tasks.
-    const modelName = "gemini-1.5-flash";
+    
+    // 복잡한 의료 추론 및 검색 증강을 위해 gemini-3-pro-preview를 명시적으로 사용합니다.
+    // gemini-1.5-flash 모델은 현재 404 에러를 유발할 수 있으므로 사용하지 않습니다.
+    const modelName = 'gemini-3-pro-preview';
     
     const prompt = `
-        당신은 세계적인 수준의 건강기능식품 및 임상 약학 데이터 분석가입니다.
-        사용자가 복용 중인 다음 목록을 분석하여 잠재적 위험을 평가하십시오: [${supplementList.join(', ')}]
+        당신은 세계적인 수준의 임상 약학 데이터 분석가이자 건강기능식품 전문가입니다.
+        사용자가 복용 중인 다음 목록을 정밀 분석하십시오: [${supplementList.join(', ')}]
 
-        분석 보고서는 다음 구조를 따라야 합니다:
-        1. 요약: 전체적인 조합의 안전성 등급 (안전/주의/위험 중 하나 선택 및 이유)
-        2. 중복 성분 확인: 동일하거나 유사한 성분이 포함되어 과다 복용 위험이 있는지 확인
-        3. 상호작용 분석: 성분 간의 흡수 방해, 부작용 증폭, 효능 감소 등 상세 분석
-        4. 전문가의 조언: 복용 시간 조정이나 전문가 상담 권유 등 구체적 지침
+        분석 리포트 가이드라인:
+        1. 안전성 종합 평가 (안전, 주의, 위험 중 선택)
+        2. 주요 성분 간의 치명적 상호작용 (흡수 저해, 독성 증가 등)
+        3. 동일 성분 중복 섭취에 의한 과다복용 위험군 식별
+        4. 최적의 복용 시간대 및 생활 수칙 제안
 
-        모든 설명은 일반인이 이해하기 쉬우면서도 과학적으로 정확해야 합니다.
-        마지막에 "본 정보는 참고용이며, 반드시 의사나 약사와 상담하십시오."를 포함하세요..
+        답변은 친절하면서도 전문적이어야 하며, 한국어로 작성하십시오.
+        신뢰할 수 있는 최신 의학 정보를 검색하여 근거를 포함하십시오.
     `;
 
     try {
         const response = await ai.models.generateContent({
-            model: modelName,
-            contents: [{ parts: [{ text: prompt }] }],
-            config: {
-                tools: [{ googleSearch: {} }],
-                temperature: 0.7,
-            }
+          model: modelName,
+          contents: [{ parts: [{ text: prompt }] }],
+          config: {
+            tools: [{ googleSearch: {} }],
+            temperature: 0.4, // 분석의 정확도를 위해 온도를 낮춤
+          },
         });
 
         const text = response.text || "분석 결과를 생성할 수 없습니다.";
         const sources: { title: string; uri: string }[] = [];
         
-        // Guidelines: Extract website URLs from groundingChunks and list them.
-        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-        
-        if (groundingChunks) {
-            groundingChunks.forEach((chunk: any) => {
-                if (chunk.web && chunk.web.uri && chunk.web.title) {
-                    sources.push({ title: chunk.web.title, uri: chunk.web.uri });
-                }
-            });
+        // Grounding Metadata에서 소스 추출 (규칙 준수)
+        const candidates = (response as any).candidates;
+        if (candidates && candidates[0]?.groundingMetadata?.groundingChunks) {
+          candidates[0].groundingMetadata.groundingChunks.forEach((chunk: any) => {
+            if (chunk.web && chunk.web.uri && chunk.web.title) {
+              sources.push({
+                title: chunk.web.title,
+                uri: chunk.web.uri
+              });
+            }
+          });
         }
 
         return { text, sources };
     } catch (error: any) {
-        console.error("Gemini API Error:", error);
-        // Handle "Requested entity was not found" by throwing a specific error for the UI.
-        if (error.message?.includes("Requested entity was not found")) {
+        // 404 Not Found 에러가 발생하면 모델 또는 키 문제로 간주
+        if (error.message?.includes("404") || error.message?.includes("not found")) {
             throw new Error("API_KEY_INVALID");
         }
         throw error;
