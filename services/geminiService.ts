@@ -10,11 +10,17 @@ export interface AnalysisResult {
  * 복용 중인 영양제 및 의약품 목록을 분석하여 상호작용 위험을 반환합니다.
  */
 export const analyzeSupplements = async (supplementList: string[]): Promise<AnalysisResult> => {
-    // API 키는 환경 변수 process.env.API_KEY에서 직접 가져옵니다.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // API key must be obtained from process.env.API_KEY.
+    const apiKey = process.env.API_KEY;
     
-    // 텍스트 분석 및 검색 기능에 최적화된 모델 선택
-    const modelName = 'gemini-3-flash-preview';
+    if (!apiKey || apiKey === "undefined") {
+      throw new Error("API_KEY_MISSING");
+    }
+
+    // Always create a new GoogleGenAI instance right before the call for up-to-date key selection.
+    const ai = new GoogleGenAI({ apiKey });
+    // Use gemini-3-pro-preview for complex medical/pharmacological reasoning tasks.
+    const modelName = 'gemini-3-pro-preview';
     
     const prompt = `
         당신은 세계적인 수준의 건강기능식품 및 임상 약학 데이터 분석가입니다.
@@ -35,24 +41,21 @@ export const analyzeSupplements = async (supplementList: string[]): Promise<Anal
             model: modelName,
             contents: [{ parts: [{ text: prompt }] }],
             config: {
-                tools: [{ googleSearch: {} }], // 최신 정보 기반 검색 기능 활성화
+                tools: [{ googleSearch: {} }],
                 temperature: 0.7,
             }
         });
 
         const text = response.text || "분석 결과를 생성할 수 없습니다.";
-        
-        // 검색 출처(Grounding Chunks) 추출
         const sources: { title: string; uri: string }[] = [];
+        
+        // Guidelines: Extract website URLs from groundingChunks and list them.
         const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
         
         if (groundingChunks) {
             groundingChunks.forEach((chunk: any) => {
                 if (chunk.web && chunk.web.uri && chunk.web.title) {
-                    sources.push({
-                        title: chunk.web.title,
-                        uri: chunk.web.uri
-                    });
+                    sources.push({ title: chunk.web.title, uri: chunk.web.uri });
                 }
             });
         }
@@ -60,12 +63,10 @@ export const analyzeSupplements = async (supplementList: string[]): Promise<Anal
         return { text, sources };
     } catch (error: any) {
         console.error("Gemini API Error:", error);
-        
-        // 브라우저에서 API 키를 인식하지 못할 때의 상세 메시지
-        if (error.message?.includes("API Key not set") || error.message?.includes("API_KEY")) {
-          throw new Error("API 키가 설정되지 않았습니다. Netlify 설정에서 'Build environment variables'에 API_KEY가 정확히 입력되었는지 확인하고, 사이트를 다시 'Deploy' 하십시오.");
+        // Handle "Requested entity was not found" by throwing a specific error for the UI.
+        if (error.message?.includes("Requested entity was not found")) {
+            throw new Error("API_KEY_INVALID");
         }
-        
-        throw new Error("분석 도중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        throw error;
     }
 };
