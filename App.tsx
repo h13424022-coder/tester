@@ -2,8 +2,7 @@
 import React, { useState, FormEvent, useRef, useEffect } from 'react';
 import { analyzeSupplements, AnalysisResult } from './services/geminiService';
 
-// Fix: Use the correct interface name 'AIStudio' and add the 'readonly' modifier 
-// to match the environment's existing declaration, avoiding redeclaration conflicts.
+// AIStudio 인터페이스 정의 - Moved into declare global and removed readonly to avoid type and modifier conflicts
 declare global {
   interface AIStudio {
     hasSelectedApiKey: () => Promise<boolean>;
@@ -11,7 +10,7 @@ declare global {
   }
 
   interface Window {
-    readonly aistudio: AIStudio;
+    aistudio: AIStudio;
   }
 }
 
@@ -19,16 +18,24 @@ const App: React.FC = () => {
     const [supplements, setSupplements] = useState<string[]>(['아스피린', '오메가-3', '비타민 E']);
     const [newItem, setNewItem] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [isSelectingKey, setIsSelectingKey] = useState<boolean>(false);
     const [error, setError] = useState<{message: string; type?: string} | null>(null);
     const [result, setResult] = useState<AnalysisResult | null>(null);
-    const [hasKey, setHasKey] = useState<boolean>(!!process.env.API_KEY);
+    // process.env.API_KEY가 실제 유효한 값인지 확인
+    const [hasKey, setHasKey] = useState<boolean>(
+        !!process.env.API_KEY && process.env.API_KEY !== "undefined" && process.env.API_KEY !== ""
+    );
     const resultRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const checkKey = async () => {
             if (window.aistudio) {
-                const selected = await window.aistudio.hasSelectedApiKey();
-                if (selected) setHasKey(true);
+                try {
+                    const selected = await window.aistudio.hasSelectedApiKey();
+                    if (selected) setHasKey(true);
+                } catch (e) {
+                    console.error("Failed to check API key status:", e);
+                }
             }
         };
         checkKey();
@@ -49,10 +56,20 @@ const App: React.FC = () => {
 
     const handleOpenKeySelector = async () => {
         if (window.aistudio) {
-            await window.aistudio.openSelectKey();
-            // Race condition: trigger immediately assuming success as per guidelines.
-            setHasKey(true);
-            setError(null);
+            try {
+                setIsSelectingKey(true);
+                await window.aistudio.openSelectKey();
+                // 지침에 따라 즉시 성공으로 가정하고 진행
+                setHasKey(true);
+                setError(null);
+            } catch (err) {
+                console.error("Error opening key selector:", err);
+                alert("API 키 선택창을 열 수 없습니다. 브라우저 설정을 확인해주세요.");
+            } finally {
+                setIsSelectingKey(false);
+            }
+        } else {
+            alert("이 브라우저 환경에서는 시스템 API 키 선택 기능을 지원하지 않습니다. .env 파일이나 Netlify 환경 변수 설정을 확인해주세요.");
         }
     };
 
@@ -74,13 +91,15 @@ const App: React.FC = () => {
             }, 100);
         } catch (err: any) {
             if (err.message === "API_KEY_MISSING") {
+                setHasKey(false);
                 setError({ 
-                    message: "브라우저에서 API 키를 찾을 수 없습니다. Netlify 환경 변수를 설정했더라도 브라우저에 노출되지 않을 수 있습니다. 아래 버튼을 눌러 키를 활성화하거나 설정을 확인하세요.",
+                    message: "API 키가 설정되지 않았습니다. 분석을 위해 Google AI 키가 필요합니다.",
                     type: "KEY_MISSING"
                 });
             } else if (err.message === "API_KEY_INVALID") {
+                setHasKey(false);
                 setError({ 
-                    message: "제공된 API 키가 유효하지 않거나 권한이 없습니다. 키를 다시 선택해주세요.",
+                    message: "현재 사용 중인 API 키가 유효하지 않습니다. 새로운 키를 선택하거나 설정을 확인해주세요.",
                     type: "KEY_INVALID"
                 });
             } else {
@@ -120,11 +139,11 @@ const App: React.FC = () => {
                     </p>
                     
                     {!hasKey && (
-                        <div className="mt-6 inline-flex items-center px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-medium animate-pulse">
+                        <div className="mt-6 inline-flex items-center px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-medium animate-pulse cursor-pointer hover:bg-amber-100 transition-colors" onClick={handleOpenKeySelector}>
                             <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                                 <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                             </svg>
-                            시스템 API 키 연결 대기 중
+                            API 키 설정이 필요합니다 (클릭하여 선택)
                         </div>
                     )}
                 </header>
@@ -185,7 +204,7 @@ const App: React.FC = () => {
                                     </svg>
                                 </div>
                                 <div>
-                                    <h3 className="text-red-900 font-bold text-lg mb-2">분석을 중단했습니다</h3>
+                                    <h3 className="text-red-900 font-bold text-lg mb-2">문제가 발생했습니다</h3>
                                     <p className="text-red-700 text-sm leading-relaxed">{error.message}</p>
                                 </div>
                             </div>
@@ -194,16 +213,27 @@ const App: React.FC = () => {
                                 <div className="space-y-4">
                                     <button
                                         onClick={handleOpenKeySelector}
-                                        className="w-full py-4 bg-white border-2 border-red-200 text-red-700 rounded-2xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center"
+                                        disabled={isSelectingKey}
+                                        className="w-full py-4 bg-white border-2 border-red-200 text-red-700 rounded-2xl font-bold hover:bg-red-100 transition-colors flex items-center justify-center disabled:opacity-50"
                                     >
-                                        <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                        </svg>
-                                        시스템 API 키 선택하기
+                                        {isSelectingKey ? (
+                                            <span className="flex items-center italic">다이얼로그 여는 중...</span>
+                                        ) : (
+                                            <>
+                                                <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                                                </svg>
+                                                시스템 API 키 선택하기
+                                            </>
+                                        )}
                                     </button>
-                                    <p className="text-[11px] text-red-400 text-center leading-tight px-4">
-                                        * Netlify를 사용 중이라면: Site settings &gt Environment variables에서 API_KEY를 설정한 후, 반드시 'Deploys' 메뉴에서 <b>'Clear cache and deploy site'</b>를 수행해야 브라우저에 반영됩니다.
-                                    </p>
+                                    <div className="bg-white/50 p-4 rounded-xl border border-red-100">
+                                        <p className="text-[11px] text-red-500 font-medium mb-1">💡 해결되지 않는다면?</p>
+                                        <p className="text-[10px] text-red-400 leading-tight">
+                                            1. 로컬 개발 시: 프로젝트 루트의 .env 파일에 API_KEY=키값 을 추가하세요.<br/>
+                                            2. Netlify 배포 시: Site settings > Environment variables에서 키를 추가하고 <b>'Deploys > Clear cache and deploy'</b>를 실행하세요.
+                                        </p>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -216,12 +246,12 @@ const App: React.FC = () => {
                                 <h2 className="text-2xl font-black text-slate-900 flex items-center">
                                     <span className="bg-blue-100 text-blue-600 p-2 rounded-lg mr-3">
                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                                         </svg>
                                     </span>
                                     AI 정밀 분석 결과
                                 </h2>
-                                <button onClick={() => window.print()} className="text-slate-400 hover:text-slate-600">
+                                <button onClick={() => window.print()} className="text-slate-400 hover:text-slate-600 p-2 hover:bg-slate-100 rounded-lg transition-colors" title="출력하기">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                                     </svg>
@@ -234,12 +264,12 @@ const App: React.FC = () => {
 
                             {result.sources.length > 0 && (
                                 <div className="pt-8 border-t border-slate-100">
-                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">참조 데이터 소스</h4>
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">참조 데이터 소스 (Google Search)</h4>
                                     <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                         {result.sources.map((source, idx) => (
-                                            <li key={idx} className="bg-slate-50 rounded-xl p-3 border border-slate-100 hover:border-blue-200 transition-all">
-                                                <a href={source.uri} target="_blank" rel="noopener noreferrer" className="flex items-center text-sm font-semibold text-slate-600 hover:text-blue-600">
-                                                    <svg className="w-4 h-4 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <li key={idx} className="bg-slate-50 rounded-xl p-3 border border-slate-100 hover:border-blue-200 transition-all group">
+                                                <a href={source.uri} target="_blank" rel="noopener noreferrer" className="flex items-center text-sm font-semibold text-slate-600 group-hover:text-blue-600">
+                                                    <svg className="w-4 h-4 mr-2 flex-shrink-0 text-slate-300 group-hover:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                     </svg>
                                                     <span className="truncate">{source.title}</span>
@@ -255,7 +285,7 @@ const App: React.FC = () => {
 
                 <footer className="mt-16 text-center">
                     <p className="text-slate-400 text-[10px] leading-relaxed max-w-md mx-auto">
-                        본 서비스는 의학적 조언을 대체할 수 없습니다. 중요한 건강상의 결정은 반드시 의료 전문가와 상담하십시오.
+                        본 서비스는 의학적 조언을 대체할 수 없습니다. 중요한 건강상의 결정은 반드시 의료 전문가와 상담하십시오. AI 분석 결과는 100% 정확하지 않을 수 있습니다.
                     </p>
                 </footer>
             </div>
