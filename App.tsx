@@ -231,7 +231,7 @@ const App: React.FC = () => {
                                         <p className="text-[11px] text-red-500 font-medium mb-1">💡 해결되지 않는다면?</p>
                                         <p className="text-[10px] text-red-400 leading-tight">
                                             1. 로컬 개발 시: 프로젝트 루트의 .env 파일에 API_KEY=키값 을 추가하세요.<br/>
-                                            2. Netlify 배포 시: Site settings > Environment variables에서 키를 추가하고 <b>'Deploys > Clear cache and deploy'</b>를 실행하세요.
+                                            2. Netlify 배포 시: Site settings &gt Environment variables에서 키를 추가하고 <b>'Deploys > Clear cache and deploy'</b>를 실행하세요.
                                         </p>
                                     </div>
                                 </div>
