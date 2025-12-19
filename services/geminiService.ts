@@ -20,7 +20,7 @@ export const analyzeSupplements = async (supplementList: string[]): Promise<Anal
     // Always create a new GoogleGenAI instance right before the call for up-to-date key selection.
     const ai = new GoogleGenAI({ apiKey });
     // Use gemini-3-pro-preview for complex medical/pharmacological reasoning tasks.
-    const modelName = 'gemini-1.5-flash';
+    const modelName = "gemini-1.5-flash";
     
     const prompt = `
         당신은 세계적인 수준의 건강기능식품 및 임상 약학 데이터 분석가입니다.
