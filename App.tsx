@@ -2,19 +2,6 @@
 import React, { useState, FormEvent, useRef, useEffect } from 'react';
 import { analyzeSupplements, AnalysisResult } from './services/geminiService';
 
-// Define the AIStudio interface that is expected to be present on the global Window object.
-// We use 'declare global' to extend the existing types without causing conflicts.
-declare global {
-  interface AIStudio {
-    hasSelectedApiKey(): Promise<boolean>;
-    openSelectKey(): Promise<void>;
-  }
-  interface Window {
-    // We declare aistudio as readonly to match the likely existing modifier in the environment.
-    readonly aistudio: AIStudio;
-  }
-}
-
 const App: React.FC = () => {
     const [supplements, setSupplements] = useState<string[]>(['아스피린', '오메가-3', '비타민 E']);
     const [newItem, setNewItem] = useState<string>('');
@@ -29,8 +16,12 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const checkKey = async () => {
+            // Use the globally provided window.aistudio to check for an API key.
+            // Redefining these interfaces causes duplicate identifier errors in this environment.
+            // @ts-ignore
             if (window.aistudio) {
                 try {
+                    // @ts-ignore
                     const selected = await window.aistudio.hasSelectedApiKey();
                     if (selected) setHasKey(true);
                 } catch (e) {
@@ -55,11 +46,13 @@ const App: React.FC = () => {
     };
 
     const handleOpenKeySelector = async () => {
+        // @ts-ignore
         if (window.aistudio) {
             try {
                 setIsSelectingKey(true);
+                // @ts-ignore
                 await window.aistudio.openSelectKey();
-                // 키 선택 후 즉시 상태 업데이트 (레이스 컨디션 방지)
+                // Assume the key selection was successful to avoid race condition delays.
                 setHasKey(true);
                 setError(null);
             } catch (err) {
@@ -88,6 +81,7 @@ const App: React.FC = () => {
             }, 100);
         } catch (err: any) {
             console.error("Analysis Error:", err);
+            // If the error indicates a missing or invalid key, reset the state and prompt for a new key.
             if (err.message === "API_KEY_MISSING") {
                 setHasKey(false);
                 setError({ 
