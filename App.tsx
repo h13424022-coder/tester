@@ -16,8 +16,6 @@ const App: React.FC = () => {
 
     useEffect(() => {
         const checkKey = async () => {
-            // Use the globally provided window.aistudio to check for an API key.
-            // Redefining these interfaces causes duplicate identifier errors in this environment.
             // @ts-ignore
             if (window.aistudio) {
                 try {
@@ -25,7 +23,7 @@ const App: React.FC = () => {
                     const selected = await window.aistudio.hasSelectedApiKey();
                     if (selected) setHasKey(true);
                 } catch (e) {
-                    console.debug("API key check skipped or not available");
+                    console.debug("API key check skipped");
                 }
             }
         };
@@ -52,7 +50,6 @@ const App: React.FC = () => {
                 setIsSelectingKey(true);
                 // @ts-ignore
                 await window.aistudio.openSelectKey();
-                // Assume the key selection was successful to avoid race condition delays.
                 setHasKey(true);
                 setError(null);
             } catch (err) {
@@ -81,21 +78,26 @@ const App: React.FC = () => {
             }, 100);
         } catch (err: any) {
             console.error("Analysis Error:", err);
-            // If the error indicates a missing or invalid key, reset the state and prompt for a new key.
-            if (err.message === "API_KEY_MISSING") {
+            
+            if (err.message === "QUOTA_EXHAUSTED") {
+                setError({ 
+                    message: "현재 너무 많은 요청이 발생하여 분석이 지연되고 있습니다. 약 1분 후 다시 시도하시거나, 유료 프로젝트의 API 키를 사용해 보세요.",
+                    type: "QUOTA"
+                });
+            } else if (err.message === "API_KEY_MISSING") {
                 setHasKey(false);
                 setError({ 
                     message: "API 키가 설정되지 않았습니다. 분석을 위해 유효한 키가 필요합니다.",
                     type: "KEY_MISSING"
                 });
-            } else if (err.message === "API_KEY_INVALID" || err.message.includes("404") || err.message.includes("not found")) {
+            } else if (err.message === "API_KEY_INVALID") {
                 setHasKey(false);
                 setError({ 
-                    message: "현재 사용 중인 모델이나 키에 문제가 발생했습니다. 시스템 API 키를 다시 선택해주세요.",
+                    message: "현재 사용 중인 API 키에 문제가 있습니다. 키를 다시 선택해주세요.",
                     type: "KEY_INVALID"
                 });
             } else {
-                setError({ message: "분석 중 예기치 않은 오류가 발생했습니다. 다시 시도해주세요." });
+                setError({ message: "예기치 않은 오류가 발생했습니다. 잠시 후 다시 시도해주세요." });
             }
         } finally {
             setIsLoading(false);
@@ -126,7 +128,7 @@ const App: React.FC = () => {
                         영양제 <span className="text-blue-600">안전 분석</span>
                     </h1>
                     <p className="text-slate-500 text-lg max-w-lg mx-auto leading-relaxed">
-                        복용 중인 약물과 영양제의 성분을 교차 분석하여 잠재적 위험 요소를 찾아냅니다.
+                        가장 빠르고 안정적인 최적화 모델(Lite)로 당신의 건강을 체크합니다.
                     </p>
                     
                     {!hasKey && (
@@ -188,16 +190,20 @@ const App: React.FC = () => {
                     </section>
 
                     {error && (
-                        <div className="bg-red-50 border border-red-200 p-8 rounded-3xl">
+                        <div className={`p-8 rounded-3xl border ${error.type === 'QUOTA' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
                             <div className="flex items-start space-x-4">
-                                <div className="p-3 bg-red-100 rounded-xl text-red-600">
+                                <div className={`p-3 rounded-xl ${error.type === 'QUOTA' ? 'bg-amber-100 text-amber-600' : 'bg-red-100 text-red-600'}`}>
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                     </svg>
                                 </div>
                                 <div className="flex-1">
-                                    <h3 className="text-red-900 font-bold text-lg mb-2">분석을 완료할 수 없습니다</h3>
-                                    <p className="text-red-700 text-sm mb-6 leading-relaxed">{error.message}</p>
+                                    <h3 className={`font-bold text-lg mb-2 ${error.type === 'QUOTA' ? 'text-amber-900' : 'text-red-900'}`}>
+                                        {error.type === 'QUOTA' ? '잠시만 기다려주세요' : '분석을 완료할 수 없습니다'}
+                                    </h3>
+                                    <p className={`text-sm mb-6 leading-relaxed ${error.type === 'QUOTA' ? 'text-amber-700' : 'text-red-700'}`}>
+                                        {error.message}
+                                    </p>
                                     {(error.type === "KEY_MISSING" || error.type === "KEY_INVALID") && (
                                         <button
                                             onClick={handleOpenKeySelector}
