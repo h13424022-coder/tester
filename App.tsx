@@ -3,23 +3,29 @@ import React, { useState, useCallback, FormEvent } from 'react';
 import { analyzeSupplements } from './services/geminiService';
 
 const Pill: React.FC<{ text: string; onRemove: () => void }> = ({ text, onRemove }) => (
-  <span className="inline-flex items-center justify-center px-3 py-1 text-sm font-medium leading-none text-blue-800 bg-blue-100 rounded-full">
+  <span className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-semibold leading-none text-blue-700 bg-blue-50 border border-blue-200 rounded-full shadow-sm transition-all hover:bg-blue-100">
     {text}
-    <button onClick={onRemove} className="ml-2 text-blue-500 hover:text-blue-700 focus:outline-none">
-      &#x2715;
+    <button onClick={onRemove} className="ml-2 text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" aria-label={`Remove ${text}`}>
+      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+      </svg>
     </button>
   </span>
 );
 
 const Spinner: React.FC = () => (
-    <div className="flex justify-center items-center p-8">
-        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent border-solid rounded-full animate-spin"></div>
+    <div className="flex flex-col justify-center items-center p-12 space-y-4">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent border-solid rounded-full animate-spin"></div>
+        <p className="text-blue-600 font-medium animate-pulse">AI 전문가가 복용 목록을 정밀 분석 중입니다...</p>
     </div>
 );
 
 const Alert: React.FC<{ message: string }> = ({ message }) => (
-  <div className="p-4 mt-4 text-red-800 bg-red-100 border border-red-200 rounded-lg">
-    <p><span className="font-bold">오류:</span> {message}</p>
+  <div className="p-4 mt-6 text-red-800 bg-red-50 border border-red-200 rounded-xl flex items-start space-x-3" role="alert">
+    <svg className="w-5 h-5 text-red-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+    </svg>
+    <p><span className="font-bold">분석 중단:</span> {message}</p>
   </div>
 );
 
@@ -32,8 +38,9 @@ const App: React.FC = () => {
 
     const handleAddItem = (e: FormEvent) => {
         e.preventDefault();
-        if (newItem.trim() && !supplements.includes(newItem.trim())) {
-            setSupplements([...supplements, newItem.trim()]);
+        const trimmed = newItem.trim();
+        if (trimmed && !supplements.includes(trimmed)) {
+            setSupplements([...supplements, trimmed]);
             setNewItem('');
         }
     };
@@ -44,7 +51,7 @@ const App: React.FC = () => {
 
     const handleAnalyze = useCallback(async () => {
         if (supplements.length === 0) {
-            setError('분석할 항목을 하나 이상 추가해주세요.');
+            setError('최소 한 개 이상의 의약품이나 영양제를 입력해주세요.');
             return;
         }
         setIsLoading(true);
@@ -54,105 +61,148 @@ const App: React.FC = () => {
         try {
             const analysis = await analyzeSupplements(supplements);
             setResult(analysis);
-        } catch (e) {
-            setError('AI 분석 중 오류가 발생했습니다. API 키를 확인하거나 잠시 후 다시 시도해주세요.');
-            console.error(e);
+        } catch (e: any) {
+            setError(e.message || '분석 중 예상치 못한 오류가 발생했습니다.');
         } finally {
             setIsLoading(false);
         }
     }, [supplements]);
 
     const renderResult = (text: string) => {
-        const sections = text.split(/(###\s.*\n)/).filter(Boolean);
+        const sections = text.split(/(###\s.*)/).filter(Boolean);
+
         return sections.map((section, index) => {
             if (section.startsWith('### ')) {
-                 return <h3 key={index} className="text-xl font-bold mt-6 mb-2 text-gray-800">{section.replace('###', '').trim()}</h3>
+                return (
+                    <h3 key={index} className="text-xl font-bold mt-8 mb-3 text-gray-900 border-b pb-2 flex items-center">
+                        <span className="w-1.5 h-6 bg-blue-500 rounded-full mr-3"></span>
+                        {section.replace('###', '').trim()}
+                    </h3>
+                );
             }
-            return <div key={index} className="prose prose-blue max-w-none" dangerouslySetInnerHTML={{__html: section.replace(/- \*\*(.*)\*\*:/g, '<p class="mt-2"><strong class="text-gray-700">$1</strong>:')
-            .replace(/\n/g, '<br />')
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            }}/>
-        })
-    }
+
+            const lines = section.trim().split('\n').filter(line => line.trim() !== '');
+            const elements: React.ReactElement[] = [];
+            let listItems: React.ReactElement[] = [];
+
+            const flushList = () => {
+                if (listItems.length > 0) {
+                    elements.push(<ul key={`ul-${elements.length}`} className="list-disc pl-6 space-y-2 mt-3 text-gray-700">{listItems}</ul>);
+                    listItems = [];
+                }
+            };
+
+            lines.forEach((line, lineIndex) => {
+                // Basic markdown bold to HTML
+                const processedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-900 font-bold">$1</strong>');
+
+                if (line.trim().startsWith('- ')) {
+                    listItems.push(
+                        <li key={lineIndex} 
+                            className="leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: processedLine.replace(/^- /, '') }} 
+                        />
+                    );
+                } else {
+                    flushList();
+                    elements.push(
+                        <p key={lineIndex} 
+                           className="mt-3 leading-relaxed text-gray-700" 
+                           dangerouslySetInnerHTML={{ __html: processedLine }} 
+                        />
+                    );
+                }
+            });
+
+            flushList();
+            return <div key={index}>{elements}</div>;
+        });
+    };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex flex-col items-center p-4 sm:p-6 lg:p-8">
-            <div className="w-full max-w-3xl mx-auto">
-                <header className="text-center mb-8">
-                    <h1 className="text-4xl sm:text-5xl font-extrabold text-gray-800">
-                        <span className="text-blue-600">AI 영양제</span> 상호작용 분석
+        <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center py-12 px-4">
+            <div className="w-full max-w-2xl mx-auto">
+                <header className="text-center mb-12">
+                    <div className="inline-block p-2 px-4 bg-blue-50 text-blue-600 text-xs font-bold uppercase tracking-wider rounded-full mb-4">
+                        Smart Health Assistant
+                    </div>
+                    <h1 className="text-4xl font-black text-gray-900 tracking-tight">
+                        영양제 <span className="text-blue-600">상호작용</span> 체커
                     </h1>
-                    <p className="mt-3 text-lg text-gray-600">
-                        복용 중인 영양제와 의약품의 잠재적 위험을 확인하세요.
+                    <p className="mt-4 text-gray-500 text-lg">
+                        복용 중인 약물 조합의 안전성을 AI가 즉시 분석합니다.
                     </p>
                 </header>
 
-                <main className="bg-white p-6 sm:p-8 rounded-2xl shadow-lg border border-gray-200">
-                    <div className="mb-6">
-                        <h2 className="text-xl font-bold text-gray-700 mb-3">1. 복용 목록 추가</h2>
-                        <form onSubmit={handleAddItem} className="flex flex-col sm:flex-row gap-3">
+                <main className="bg-white p-8 rounded-3xl shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)] border border-gray-100 transition-all">
+                    <div className="mb-8">
+                        <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">복용 중인 항목 추가</label>
+                        <form onSubmit={handleAddItem} className="flex gap-2">
                             <input
                                 type="text"
                                 value={newItem}
                                 onChange={(e) => setNewItem(e.target.value)}
-                                placeholder="의약품 또는 영양제 이름 입력 (예: 마그네슘)"
-                                className="flex-grow w-full px-4 py-3 text-gray-700 bg-gray-100 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+                                placeholder="예: 아스피린, 비타민 C, 루테인..."
+                                className="flex-grow px-5 py-3.5 text-gray-800 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all placeholder:text-gray-400"
                             />
                             <button
                                 type="submit"
-                                className="w-full sm:w-auto px-6 py-3 font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105"
+                                className="px-6 py-3.5 font-bold text-white bg-blue-600 rounded-2xl hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-500/20"
                             >
                                 추가
                             </button>
                         </form>
                     </div>
 
-                    <div className="mb-6 min-h-[6rem] p-4 bg-gray-50 rounded-lg border">
+                    <div className="mb-8 p-6 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 min-h-[120px] flex flex-wrap content-start gap-2">
                         {supplements.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                                {supplements.map((item, index) => (
-                                    <Pill key={index} text={item} onRemove={() => handleRemoveItem(index)} />
-                                ))}
-                            </div>
+                            supplements.map((item, index) => (
+                                <Pill key={index} text={item} onRemove={() => handleRemoveItem(index)} />
+                            ))
                         ) : (
-                            <div className="flex items-center justify-center h-full">
-                               <p className="text-gray-500">분석할 항목을 추가해주세요.</p>
+                            <div className="flex flex-col items-center justify-center w-full h-full text-gray-400 space-y-2">
+                                <svg className="w-8 h-8 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p className="text-sm">목록이 비어있습니다. 약품을 추가해주세요.</p>
                             </div>
                         )}
                     </div>
 
-                    <div className="text-center mb-6">
-                        <button
-                            onClick={handleAnalyze}
-                            disabled={isLoading || supplements.length === 0}
-                            className="w-full sm:w-1/2 px-8 py-4 text-lg font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all transform hover:scale-105"
-                        >
-                            {isLoading ? '분석 중...' : '🔬 AI 분석 시작하기'}
-                        </button>
-                    </div>
+                    <button
+                        onClick={handleAnalyze}
+                        disabled={isLoading || supplements.length === 0}
+                        className="w-full py-4.5 rounded-2xl bg-gray-900 text-white font-bold text-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all flex items-center justify-center space-x-2 shadow-xl"
+                    >
+                        {isLoading ? '데이터 분석 중...' : (
+                            <>
+                                <span>🔬 AI 분석 시작하기</span>
+                            </>
+                        )}
+                    </button>
 
                     {error && <Alert message={error} />}
                     
                     {(isLoading || result) && (
-                        <div className="mt-8 pt-6 border-t border-gray-200">
-                            <h2 className="text-2xl font-bold text-gray-800 mb-4 text-center">분석 결과</h2>
+                        <div id="result-section" className="mt-12 pt-8 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-2xl font-black text-gray-900">전문 분석 리포트</h2>
+                                <span className="px-3 py-1 bg-green-50 text-green-600 text-xs font-bold rounded-md">AI Generated</span>
+                            </div>
                             {isLoading ? (
                                 <Spinner />
                             ) : (
-                                <div className="p-5 bg-blue-50/50 rounded-lg border border-blue-100 space-y-2 text-gray-700 leading-relaxed">
+                                <div className="p-7 bg-[#F1F5F9] rounded-3xl border border-gray-200 text-gray-800 leading-relaxed shadow-inner">
                                     {renderResult(result)}
                                 </div>
                             )}
                         </div>
                     )}
                 </main>
-                 <footer className="text-center mt-8 text-sm text-gray-500">
-                    <p>
-                        본 분석 결과는 AI를 통해 제공되는 정보이며, 의학적 진단을 대체할 수 없습니다.
-                    </p>
-                    <p>
-                        정확한 정보는 반드시 의사 또는 약사와 상담하세요.
-                    </p>
+                
+                <footer className="mt-12 text-center text-sm text-gray-400 max-w-md mx-auto leading-relaxed">
+                    <p className="mb-2">⚠️ 주의: 본 정보는 의학적 조언이 아닙니다.</p>
+                    <p>복용 중인 약물의 변경이나 중단은 반드시 담당 전문의 또는 약사와 상의 후 결정하시기 바랍니다.</p>
                 </footer>
             </div>
         </div>
