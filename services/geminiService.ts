@@ -5,7 +5,6 @@ export interface AnalysisResult {
   text: string;
   sources: { title: string; uri: string }[];
 }
-
 /**
  * 복용 중인 영양제 및 의약품 목록을 분석하여 상호작용 위험을 반환합니다.
  */
