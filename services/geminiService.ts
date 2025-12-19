@@ -1,5 +1,6 @@
 
 import { GoogleGenAI } from "@google/genai";
+import.meta.env.VITE_API_KEY
 
 export interface AnalysisResult {
   text: string;

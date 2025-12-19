@@ -202,7 +202,7 @@ const App: React.FC = () => {
                                         시스템 API 키 선택하기
                                     </button>
                                     <p className="text-[11px] text-red-400 text-center leading-tight px-4">
-                                        * Netlify를 사용 중이라면: Site settings > Environment variables에서 API_KEY를 설정한 후, 반드시 'Deploys' 메뉴에서 <b>'Clear cache and deploy site'</b>를 수행해야 브라우저에 반영됩니다.
+                                        * Netlify를 사용 중이라면: Site settings &gt Environment variables에서 API_KEY를 설정한 후, 반드시 'Deploys' 메뉴에서 <b>'Clear cache and deploy site'</b>를 수행해야 브라우저에 반영됩니다.
                                     </p>
                                 </div>
                             )}
