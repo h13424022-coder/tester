@@ -1,208 +1,220 @@
 
-import React, { useState, useCallback, FormEvent } from 'react';
-import { analyzeSupplements } from './services/geminiService';
-
-const Pill: React.FC<{ text: string; onRemove: () => void }> = ({ text, onRemove }) => (
-  <span className="inline-flex items-center justify-center px-4 py-1.5 text-sm font-semibold leading-none text-blue-700 bg-blue-50 border border-blue-200 rounded-full shadow-sm transition-all hover:bg-blue-100">
-    {text}
-    <button onClick={onRemove} className="ml-2 text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" aria-label={`Remove ${text}`}>
-      <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-      </svg>
-    </button>
-  </span>
-);
-
-const Spinner: React.FC = () => (
-    <div className="flex flex-col justify-center items-center p-12 space-y-4">
-        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent border-solid rounded-full animate-spin"></div>
-        <p className="text-blue-600 font-medium animate-pulse">AI 전문가가 복용 목록을 정밀 분석 중입니다...</p>
-    </div>
-);
-
-const Alert: React.FC<{ message: string }> = ({ message }) => (
-  <div className="p-4 mt-6 text-red-800 bg-red-50 border border-red-200 rounded-xl flex items-start space-x-3" role="alert">
-    <svg className="w-5 h-5 text-red-500 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-    </svg>
-    <p><span className="font-bold">분석 중단:</span> {message}</p>
-  </div>
-);
+import React, { useState, useCallback, FormEvent, useRef } from 'react';
+import { analyzeSupplements, AnalysisResult } from './services/geminiService';
 
 const App: React.FC = () => {
-    const [supplements, setSupplements] = useState<string[]>(['와파린', '오메가-3 (2000mg)', '비타민 D']);
+    const [supplements, setSupplements] = useState<string[]>(['아스피린', '오메가-3', '비타민 E']);
     const [newItem, setNewItem] = useState<string>('');
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
-    const [result, setResult] = useState<string>('');
+    const [result, setResult] = useState<AnalysisResult | null>(null);
+    const resultRef = useRef<HTMLDivElement>(null);
 
     const handleAddItem = (e: FormEvent) => {
         e.preventDefault();
         const trimmed = newItem.trim();
         if (trimmed && !supplements.includes(trimmed)) {
-            setSupplements([...supplements, trimmed]);
+            setSupplements(prev => [...prev, trimmed]);
             setNewItem('');
         }
     };
 
-    const handleRemoveItem = (indexToRemove: number) => {
-        setSupplements(supplements.filter((_, index) => index !== indexToRemove));
+    const removeItem = (item: string) => {
+        setSupplements(prev => prev.filter(s => s !== item));
     };
 
-    const handleAnalyze = useCallback(async () => {
+    const runAnalysis = async () => {
         if (supplements.length === 0) {
-            setError('최소 한 개 이상의 의약품이나 영양제를 입력해주세요.');
+            setError("분석할 항목을 하나 이상 추가해주세요.");
             return;
         }
+
         setIsLoading(true);
         setError(null);
-        setResult('');
+        setResult(null);
 
         try {
-            const analysis = await analyzeSupplements(supplements);
-            setResult(analysis);
-        } catch (e: any) {
-            setError(e.message || '분석 중 예상치 못한 오류가 발생했습니다.');
+            const data = await analyzeSupplements(supplements);
+            setResult(data);
+            // 분석 완료 후 결과 창으로 스크롤
+            setTimeout(() => {
+                resultRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+        } catch (err: any) {
+            setError(err.message);
         } finally {
             setIsLoading(false);
         }
-    }, [supplements]);
+    };
 
-    const renderResult = (text: string) => {
-        const sections = text.split(/(###\s.*)/).filter(Boolean);
-
-        return sections.map((section, index) => {
-            if (section.startsWith('### ')) {
-                return (
-                    <h3 key={index} className="text-xl font-bold mt-8 mb-3 text-gray-900 border-b pb-2 flex items-center">
-                        <span className="w-1.5 h-6 bg-blue-500 rounded-full mr-3"></span>
-                        {section.replace('###', '').trim()}
-                    </h3>
-                );
-            }
-
-            const lines = section.trim().split('\n').filter(line => line.trim() !== '');
-            const elements: React.ReactElement[] = [];
-            let listItems: React.ReactElement[] = [];
-
-            const flushList = () => {
-                if (listItems.length > 0) {
-                    elements.push(<ul key={`ul-${elements.length}`} className="list-disc pl-6 space-y-2 mt-3 text-gray-700">{listItems}</ul>);
-                    listItems = [];
-                }
-            };
-
-            lines.forEach((line, lineIndex) => {
-                // Basic markdown bold to HTML
-                const processedLine = line.replace(/\*\*(.*?)\*\*/g, '<strong class="text-gray-900 font-bold">$1</strong>');
-
-                if (line.trim().startsWith('- ')) {
-                    listItems.push(
-                        <li key={lineIndex} 
-                            className="leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: processedLine.replace(/^- /, '') }} 
-                        />
-                    );
-                } else {
-                    flushList();
-                    elements.push(
-                        <p key={lineIndex} 
-                           className="mt-3 leading-relaxed text-gray-700" 
-                           dangerouslySetInnerHTML={{ __html: processedLine }} 
-                        />
-                    );
-                }
-            });
-
-            flushList();
-            return <div key={index}>{elements}</div>;
-        });
+    const renderText = (text: string) => {
+        return text.split('\n').map((line, i) => (
+            <p key={i} className="mb-3 last:mb-0 leading-relaxed text-gray-700">
+                {line.split('**').map((part, index) => 
+                    index % 2 === 1 ? <strong key={index} className="text-blue-900 font-bold">{part}</strong> : part
+                )}
+            </p>
+        ));
     };
 
     return (
-        <div className="min-h-screen bg-[#F8FAFC] flex flex-col items-center py-12 px-4">
-            <div className="w-full max-w-2xl mx-auto">
-                <header className="text-center mb-12">
-                    <div className="inline-block p-2 px-4 bg-blue-50 text-blue-600 text-xs font-bold uppercase tracking-wider rounded-full mb-4">
-                        Smart Health Assistant
+        <div className="min-h-screen bg-slate-50 font-sans text-slate-900 selection:bg-blue-100">
+            <div className="max-w-3xl mx-auto px-6 py-12">
+                {/* Header */}
+                <header className="mb-12 text-center">
+                    <div className="inline-flex items-center space-x-2 bg-blue-600 text-white px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest mb-6 shadow-lg shadow-blue-200">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                        <span>Health Shield AI</span>
                     </div>
-                    <h1 className="text-4xl font-black text-gray-900 tracking-tight">
-                        영양제 <span className="text-blue-600">상호작용</span> 체커
+                    <h1 className="text-4xl md:text-5xl font-black tracking-tight text-slate-900 mb-4">
+                        영양제 <span className="text-blue-600">안전 분석</span>
                     </h1>
-                    <p className="mt-4 text-gray-500 text-lg">
-                        복용 중인 약물 조합의 안전성을 AI가 즉시 분석합니다.
+                    <p className="text-slate-500 text-lg max-w-lg mx-auto leading-relaxed">
+                        복용 중인 약물과 영양제의 성분을 교차 분석하여 잠재적 위험 요소를 찾아냅니다.
                     </p>
                 </header>
 
-                <main className="bg-white p-8 rounded-3xl shadow-[0_20px_50px_rgba(8,_112,_184,_0.07)] border border-gray-100 transition-all">
-                    <div className="mb-8">
-                        <label className="block text-sm font-bold text-gray-700 mb-3 ml-1">복용 중인 항목 추가</label>
-                        <form onSubmit={handleAddItem} className="flex gap-2">
+                <main className="space-y-8">
+                    {/* Input Section */}
+                    <section className="bg-white rounded-3xl p-8 shadow-xl shadow-slate-200/60 border border-slate-100">
+                        <form onSubmit={handleAddItem} className="relative mb-6">
                             <input
                                 type="text"
                                 value={newItem}
                                 onChange={(e) => setNewItem(e.target.value)}
-                                placeholder="예: 아스피린, 비타민 C, 루테인..."
-                                className="flex-grow px-5 py-3.5 text-gray-800 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all placeholder:text-gray-400"
+                                placeholder="약품 또는 영양제 이름을 입력하세요 (예: 비타민 C)"
+                                className="w-full pl-6 pr-24 py-5 bg-slate-50 border-2 border-transparent focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 rounded-2xl outline-none transition-all text-lg font-medium"
                             />
                             <button
                                 type="submit"
-                                className="px-6 py-3.5 font-bold text-white bg-blue-600 rounded-2xl hover:bg-blue-700 active:scale-95 transition-all shadow-lg shadow-blue-500/20"
+                                className="absolute right-2 top-2 bottom-2 px-6 bg-slate-900 text-white font-bold rounded-xl hover:bg-black transition-colors active:scale-95"
                             >
                                 추가
                             </button>
                         </form>
-                    </div>
 
-                    <div className="mb-8 p-6 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200 min-h-[120px] flex flex-wrap content-start gap-2">
-                        {supplements.length > 0 ? (
-                            supplements.map((item, index) => (
-                                <Pill key={index} text={item} onRemove={() => handleRemoveItem(index)} />
-                            ))
-                        ) : (
-                            <div className="flex flex-col items-center justify-center w-full h-full text-gray-400 space-y-2">
-                                <svg className="w-8 h-8 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <p className="text-sm">목록이 비어있습니다. 약품을 추가해주세요.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    <button
-                        onClick={handleAnalyze}
-                        disabled={isLoading || supplements.length === 0}
-                        className="w-full py-4.5 rounded-2xl bg-gray-900 text-white font-bold text-lg hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all flex items-center justify-center space-x-2 shadow-xl"
-                    >
-                        {isLoading ? '데이터 분석 중...' : (
-                            <>
-                                <span>🔬 AI 분석 시작하기</span>
-                            </>
-                        )}
-                    </button>
-
-                    {error && <Alert message={error} />}
-                    
-                    {(isLoading || result) && (
-                        <div id="result-section" className="mt-12 pt-8 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                            <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-2xl font-black text-gray-900">전문 분석 리포트</h2>
-                                <span className="px-3 py-1 bg-green-50 text-green-600 text-xs font-bold rounded-md">AI Generated</span>
-                            </div>
-                            {isLoading ? (
-                                <Spinner />
-                            ) : (
-                                <div className="p-7 bg-[#F1F5F9] rounded-3xl border border-gray-200 text-gray-800 leading-relaxed shadow-inner">
-                                    {renderResult(result)}
+                        <div className="flex flex-wrap gap-2 min-h-[50px]">
+                            {supplements.map((item) => (
+                                <div
+                                    key={item}
+                                    className="flex items-center bg-blue-50 text-blue-700 px-4 py-2 rounded-xl border border-blue-100 font-semibold text-sm animate-in fade-in zoom-in duration-300"
+                                >
+                                    {item}
+                                    <button
+                                        onClick={() => removeItem(item)}
+                                        className="ml-2.5 p-0.5 hover:bg-blue-200 rounded-full transition-colors"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l18 18" />
+                                        </svg>
+                                    </button>
                                 </div>
+                            ))}
+                            {supplements.length === 0 && (
+                                <p className="text-slate-400 text-sm italic w-full text-center py-4">
+                                    목록이 비어있습니다. 약품을 입력하여 추가하세요.
+                                </p>
                             )}
                         </div>
+
+                        <button
+                            onClick={runAnalysis}
+                            disabled={isLoading || supplements.length === 0}
+                            className="w-full mt-8 py-5 bg-blue-600 text-white rounded-2xl font-black text-xl shadow-lg shadow-blue-500/30 hover:bg-blue-700 disabled:bg-slate-300 disabled:shadow-none transition-all active:scale-[0.98] flex items-center justify-center space-x-3"
+                        >
+                            {isLoading ? (
+                                <>
+                                    <svg className="animate-spin h-6 w-6 text-white" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span>AI 엔진 분석 중...</span>
+                                </>
+                            ) : (
+                                <span>정밀 분석 리포트 생성</span>
+                            )}
+                        </button>
+                    </section>
+
+                    {/* Error Display */}
+                    {error && (
+                        <div className="bg-red-50 border border-red-200 p-6 rounded-2xl flex items-start space-x-4 animate-in slide-in-from-top-4 duration-300">
+                            <div className="p-2 bg-red-100 rounded-lg text-red-600">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h3 className="text-red-900 font-bold mb-1">분석 오류 발생</h3>
+                                <p className="text-red-700 text-sm leading-relaxed">{error}</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Result Display */}
+                    {result && (
+                        <section ref={resultRef} className="bg-white rounded-3xl p-8 shadow-2xl shadow-blue-900/5 border border-blue-100 animate-in fade-in slide-in-from-bottom-8 duration-1000">
+                            <div className="flex items-center justify-between mb-8 border-b border-slate-100 pb-6">
+                                <h2 className="text-2xl font-black text-slate-900 flex items-center">
+                                    <span className="bg-blue-100 text-blue-600 p-2 rounded-lg mr-3">
+                                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                        </svg>
+                                    </span>
+                                    AI 정밀 분석 결과
+                                </h2>
+                                <button 
+                                    onClick={() => window.print()}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                                    title="인쇄하기"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <div className="prose prose-slate max-w-none">
+                                {renderText(result.text)}
+                            </div>
+
+                            {/* Grounding Sources */}
+                            {result.sources.length > 0 && (
+                                <div className="mt-10 pt-8 border-t border-slate-100">
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">근거 자료 및 출처</h4>
+                                    <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {result.sources.map((source, idx) => (
+                                            <li key={idx} className="bg-slate-50 rounded-xl p-3 border border-slate-100 hover:border-blue-200 transition-all group">
+                                                <a 
+                                                    href={source.uri} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center text-sm font-semibold text-slate-600 group-hover:text-blue-600"
+                                                >
+                                                    <svg className="w-4 h-4 mr-2 flex-shrink-0 text-slate-400 group-hover:text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                                    </svg>
+                                                    <span className="truncate">{source.title}</span>
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </section>
                     )}
                 </main>
-                
-                <footer className="mt-12 text-center text-sm text-gray-400 max-w-md mx-auto leading-relaxed">
-                    <p className="mb-2">⚠️ 주의: 본 정보는 의학적 조언이 아닙니다.</p>
-                    <p>복용 중인 약물의 변경이나 중단은 반드시 담당 전문의 또는 약사와 상의 후 결정하시기 바랍니다.</p>
+
+                <footer className="mt-16 text-center">
+                    <p className="text-slate-400 text-xs leading-relaxed max-w-md mx-auto">
+                        제공된 정보는 AI가 학습한 데이터를 기반으로 하며, 실시간 의학 정보와 다를 수 있습니다. 
+                        새로운 영양제나 약물을 복용하기 전에는 반드시 전문 의료진과 상담하십시오.
+                    </p>
+                    <div className="mt-8 flex justify-center space-x-6 text-slate-300">
+                        <span className="text-[10px] font-bold tracking-tighter uppercase">Gemini 3.0 Flash Driven</span>
+                    </div>
                 </footer>
             </div>
         </div>
